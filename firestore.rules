@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: chatbots
+    // Fields:
+    //   - name: string (required)
+    //   - userId: string (required, immutable)
+    //   - botName: string (required)
+    //   - primaryColor: string (required, hex)
+    //   - welcomeMessage: string (optional)
+    //   - systemPrompt: string (optional)
+    //   - createdAt: timestamp (required, immutable)
+    //   - updatedAt: timestamp (required)
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidChatbot(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.userId is string &&
+             data.botName is string && data.botName.size() > 0 && data.botName.size() < 50 &&
+             data.primaryColor is string && data.primaryColor.matches("^#[0-9a-fA-F]{6}$") &&
+             (!('welcomeMessage' in data) || (data.welcomeMessage is string && data.welcomeMessage.size() < 500)) &&
+             (!('systemPrompt' in data) || (data.systemPrompt is string && data.systemPrompt.size() < 2000));
+    }
+
+    match /chatbots/{chatbotId} {
+      // Public read for the widget to fetch its config
+      allow get: if true;
+      
+      // Only owners can list their chatbots
+      allow list: if isAuthenticated() && request.query.limit <= 50;
+
+      allow create: if isAuthenticated() && 
+                      isOwner(request.resource.data.userId) && 
+                      isValidChatbot(request.resource.data);
+
+      allow update: if isAuthenticated() && 
+                      isOwner(resource.data.userId) && 
+                      request.resource.data.userId == resource.data.userId &&
+                      isValidChatbot(request.resource.data);
+
+      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+  }
+}
