@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Bot, Send, X, MessageSquare, Loader2, User } from 'lucide-react';
+import { Bot, Send, X, MessageSquare, Loader2, User, Mic, MicOff, Volume2 } from 'lucide-react';
+import { useVoiceChat } from '@/hooks/use-voice-chat';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 
@@ -16,12 +17,45 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const conversationIdRef = useRef<string | null>(null);
+  const [conversationId, setConversationId] = useState<string>('');
   const clientIdRef = useRef<string | null>(null);
 
+  const {
+    status: voiceStatus,
+    isRecording,
+    connect: connectVoice,
+    disconnect: disconnectVoice,
+    startRecording,
+    stopRecording,
+    warmup,
+  } = useVoiceChat(conversationId, {
+    onTranscript: (role, text) => {
+      setMessages(prev => {
+        // If the last message is from the same role, we might want to update it for streaming feel, 
+        // but for now, we'll just append to keep it simple and reliable.
+        return [...prev, { role: role === 'input' ? 'user' : 'bot', text }];
+      });
+    },
+    metadata: {
+      provider_llm: chatbot.providerLlm,
+      provider_storage: chatbot.providerStorage,
+      provider_embedding: chatbot.providerEmbedding,
+      collection_name: chatbot.collectionName,
+    }
+  });
+
+  const toggleVoice = async () => {
+    if (voiceStatus === 'idle') {
+      await warmup();
+      connectVoice();
+    } else {
+      disconnectVoice();
+    }
+  };
+
   useEffect(() => {
-    if (!conversationIdRef.current) {
-      conversationIdRef.current = crypto.randomUUID();
+    if (!conversationId) {
+      setConversationId(crypto.randomUUID());
     }
     const storedClientId = window.localStorage.getItem('foxai_client_id');
     if (storedClientId) {
@@ -63,7 +97,7 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
         body: JSON.stringify({
           message: userMsg,
           client_id: clientIdRef.current,
-          conversation_id: conversationIdRef.current,
+          conversation_id: conversationId,
           provider_llm: chatbot.providerLlm || "gemini",
           provider_storage: chatbot.providerStorage || "qdrant",
           provider_embedding: chatbot.providerEmbedding || "gemini",
@@ -283,14 +317,43 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    placeholder={chatbot.inputPlaceholder || "Ask me anything..."}
-                    className="w-full px-4 py-3.5 rounded-2xl bg-neutral-100/60 border border-neutral-200/50 outline-none text-[14.5px] font-medium placeholder:text-neutral-400 group-hover:bg-neutral-100 transition-colors focus:bg-white focus:ring-2 focus:border-transparent target-ring-color"
+                    placeholder={voiceStatus !== 'idle' ? "Listening via Voice..." : (chatbot.inputPlaceholder || "Ask me anything...")}
+                    disabled={voiceStatus !== 'idle'}
+                    className="w-full px-4 py-3.5 rounded-2xl bg-neutral-100/60 border border-neutral-200/50 outline-none text-[14.5px] font-medium placeholder:text-neutral-400 group-hover:bg-neutral-100 transition-colors focus:bg-white focus:ring-2 focus:border-transparent target-ring-color disabled:opacity-50"
                   />
                   <style dangerouslySetInnerHTML={{__html: `.target-ring-color:focus { --tw-ring-color: ${chatbot.primaryColor}; --tw-ring-opacity: 0.25; }`}} />
                 </div>
+
+                {/* Voice Button */}
+                <button 
+                  onClick={toggleVoice}
+                  className={`p-3.5 rounded-2xl transition-all flex items-center justify-center min-w-[50px] min-h-[50px] relative overflow-hidden
+                    ${voiceStatus !== 'idle' ? 'text-white' : 'text-neutral-400 bg-neutral-100 hover:bg-neutral-200'}
+                  `}
+                  style={voiceStatus !== 'idle' ? { backgroundColor: chatbot.primaryColor } : {}}
+                >
+                  <AnimatePresence mode="wait">
+                    {voiceStatus === 'idle' ? (
+                      <motion.div key="mic-off" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>
+                        <Mic className="w-5 h-5" />
+                      </motion.div>
+                    ) : (
+                      <motion.div key="mic-on" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} className="relative z-10">
+                        {isRecording ? <MicOff className="w-5 h-5 animate-pulse" /> : <Volume2 className="w-5 h-5" />}
+                        {isRecording && (
+                          <motion.div 
+                            layoutId="voice-ping"
+                            className="absolute inset-0 rounded-full bg-white/20 -m-2 animate-ping"
+                          />
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </button>
+
                 <button 
                   onClick={handleSend}
-                  disabled={!input.trim() || isTyping}
+                  disabled={!input.trim() || isTyping || voiceStatus !== 'idle'}
                   className="p-3.5 rounded-2xl text-white transition-all disabled:opacity-50 disabled:scale-100 shadow-[0_4px_14px_rgba(0,0,0,0.15)] hover:scale-105 active:scale-95 flex items-center justify-center min-w-[50px] min-h-[50px]"
                   style={{ backgroundColor: chatbot.primaryColor }}
                 >

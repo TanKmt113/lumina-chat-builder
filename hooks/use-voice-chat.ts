@@ -5,10 +5,18 @@ import { base64ToPcm16, float32ToPcm16, arrayBufferToBase64 } from '@/lib/audio-
 
 export type VoiceChatStatus = 'idle' | 'connecting' | 'connected' | 'listening' | 'thinking' | 'speaking' | 'error';
 
+interface VoiceChatMetadata {
+  provider_llm?: string;
+  provider_storage?: string;
+  provider_embedding?: string;
+  collection_name?: string;
+}
+
 interface UseVoiceChatOptions {
   onTranscript?: (type: 'input' | 'output', text: string) => void;
   onStatusChange?: (status: VoiceChatStatus) => void;
   onError?: (error: string) => void;
+  metadata?: VoiceChatMetadata;
 }
 
 export function useVoiceChat(conversationId: string, options: UseVoiceChatOptions = {}) {
@@ -38,7 +46,15 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
     }
 
     updateStatus('connecting');
-    const wsUrl = `wss://devaibigdata.foxai.com.vn:5620/query/v1/agents/voice-kiosk?conversation_id=${conversationId}`;
+    let wsUrl = `wss://devaibigdata.foxai.com.vn:5620/query/v1/agents/voice-kiosk?conversation_id=${encodeURIComponent(conversationId)}`;
+    
+    if (options.metadata) {
+      if (options.metadata.provider_llm) wsUrl += `&provider_llm=${encodeURIComponent(options.metadata.provider_llm)}`;
+      if (options.metadata.provider_storage) wsUrl += `&provider_storage=${encodeURIComponent(options.metadata.provider_storage)}`;
+      if (options.metadata.provider_embedding) wsUrl += `&provider_embedding=${encodeURIComponent(options.metadata.provider_embedding)}`;
+      if (options.metadata.collection_name) wsUrl += `&collection_name=${encodeURIComponent(options.metadata.collection_name)}`;
+    }
+
     console.log('Connecting to WebSocket:', wsUrl);
     
     const ws = new WebSocket(wsUrl);
@@ -99,8 +115,13 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
       updateStatus('idle');
     };
 
-    ws.onerror = (err) => {
-      console.error('Voice WebSocket Error:', err);
+    ws.onerror = (err: Event) => {
+      console.error('Voice WebSocket Error Details:', {
+        type: err.type,
+        readyState: ws.readyState,
+        url: ws.url,
+      });
+      options.onError?.(`Failed to connect to voice server. URL: ${ws.url}`);
       updateStatus('error');
     };
   }, [conversationId, options, updateStatus]);
@@ -162,14 +183,12 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
       const source = ctx.createMediaStreamSource(stream);
       sourceRef.current = source;
 
-      // Use ScriptProcessor for simplicity in this implementation
       const processor = ctx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
         
-        // Simple downsampling to 16kHz if needed
         let resampledData: Float32Array;
         if (ctx.sampleRate !== 16000) {
           const ratio = ctx.sampleRate / 16000;

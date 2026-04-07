@@ -43,6 +43,12 @@ export default function VoiceKioskPage() {
     warmup,
   } = useVoiceChat(conversationId, {
     onError: (err) => setError(err),
+    metadata: chatbot ? {
+      provider_llm: chatbot.providerLlm,
+      provider_storage: chatbot.providerStorage,
+      provider_embedding: chatbot.providerEmbedding,
+      collection_name: chatbot.collectionName,
+    } : undefined
   });
 
   useEffect(() => {
@@ -88,18 +94,15 @@ export default function VoiceKioskPage() {
     }
   };
 
-  if (loading) {
-    return (
       <div className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center text-white p-6 font-sans">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-          className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full mb-4"
+          className="w-12 h-12 border-4 border-white/10 rounded-full mb-4"
+          style={{ borderTopColor: chatbot?.primaryColor || '#10b981' }}
         />
         <p className="text-neutral-400 font-medium">Initializing Kiosk...</p>
       </div>
-    );
-  }
 
   if (error) {
     return (
@@ -123,10 +126,12 @@ export default function VoiceKioskPage() {
   const lastTranscript = transcripts.length > 0 ? transcripts[transcripts.length - 1] : null;
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white font-sans overflow-hidden relative selection:bg-emerald-500/30">
+    <div className="min-h-screen bg-neutral-950 text-white font-sans overflow-hidden relative" style={{ '--primary-color': chatbot?.primaryColor || '#10b981' } as any}>
       {/* Background Orbs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-600/20 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] pointer-events-none opacity-20" 
+           style={{ backgroundColor: chatbot?.primaryColor || '#10b981' }} />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] pointer-events-none opacity-20" 
+           style={{ backgroundColor: chatbot?.primaryColor || '#3b82f6' }} />
 
       {/* Header */}
       <header className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
@@ -139,13 +144,14 @@ export default function VoiceKioskPage() {
                 {chatbot?.logoUrl ? (
                   <img src={chatbot.logoUrl} alt={chatbot.botName} className="w-full h-full object-cover" />
                 ) : (
-                  <Bot className="w-6 h-6 text-emerald-400" />
+                  <Bot className="w-6 h-6" style={{ color: chatbot?.primaryColor || '#10b981' }} />
                 )}
              </div>
              <div>
                 <h2 className="font-bold text-lg leading-tight">{chatbot?.botName || 'AI Assistant'}</h2>
                 <div className="flex items-center gap-1.5">
-                   <div className={`w-1.5 h-1.5 rounded-full ${status !== 'idle' ? 'bg-emerald-400' : 'bg-neutral-500'} animate-pulse`} />
+                   <div className={`w-1.5 h-1.5 rounded-full ${status !== 'idle' ? 'animate-pulse' : 'bg-neutral-500'}`} 
+                        style={{ backgroundColor: status !== 'idle' ? (chatbot?.primaryColor || '#10b981') : undefined }} />
                    <span className="text-[10px] uppercase tracking-widest font-bold opacity-60">
                      {status === 'idle' ? 'Offline' : 'Live Kiosk'}
                    </span>
@@ -175,8 +181,8 @@ export default function VoiceKioskPage() {
                 exit={{ opacity: 0, scale: 0.5 }}
                 className="absolute inset-0 -m-8"
               >
-                <div className="absolute inset-0 bg-emerald-500/10 rounded-full animate-ping" />
-                <div className="absolute inset-0 bg-emerald-500/5 rounded-full animate-pulse" />
+                <div className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ backgroundColor: chatbot?.primaryColor || '#10b981' }} />
+                <div className="absolute inset-0 rounded-full animate-pulse opacity-10" style={{ backgroundColor: chatbot?.primaryColor || '#10b981' }} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -193,9 +199,11 @@ export default function VoiceKioskPage() {
               { repeat: Infinity, duration: 2, ease: "easeInOut" }
             }
             className={`w-48 h-48 sm:w-64 sm:h-64 rounded-full flex items-center justify-center relative overflow-hidden group 
-              ${status === 'idle' ? 'bg-neutral-800 border-neutral-700' : 'bg-neutral-900 border-white/10'} border-2 shadow-2xl backdrop-blur-sm shadow-emerald-500/20`}
+              ${status === 'idle' ? 'bg-neutral-800 border-neutral-700' : 'bg-neutral-900 border-white/10'} border-2 shadow-2xl backdrop-blur-sm`}
+            style={{ boxShadow: status !== 'idle' ? `0 0 50px -15px ${chatbot?.primaryColor || '#10b981'}33` : undefined }}
           >
-             <div className="absolute inset-0 bg-gradient-to-tr from-emerald-500/20 to-blue-500/20 opacity-50 group-hover:opacity-100 transition-opacity pointer-events-none" />
+             <div className="absolute inset-0 opacity-20 group-hover:opacity-40 transition-opacity pointer-events-none" 
+                  style={{ backgroundImage: `linear-gradient(to top right, ${chatbot?.primaryColor || '#10b981'}, ${chatbot?.primaryColor || '#3b82f6'})` }} />
              
              {status === 'idle' ? (
                 <button 
@@ -208,7 +216,7 @@ export default function VoiceKioskPage() {
              ) : (
                 <div className="flex items-center justify-center">
                   {status === 'thinking' ? (
-                    <Bot className="w-20 h-20 text-emerald-400 group-hover:scale-110 transition-transform duration-500" />
+                    <Bot className="w-20 h-20 group-hover:scale-110 transition-transform duration-500" style={{ color: chatbot?.primaryColor || '#10b981' }} />
                   ) : status === 'speaking' ? (
                     <div className="flex items-center gap-1 h-12">
                       {[1,2,3,4,5].map(i => (
@@ -216,13 +224,14 @@ export default function VoiceKioskPage() {
                           key={i}
                           animate={{ height: [12, 32, 16, 48, 12] }}
                           transition={{ repeat: Infinity, duration: 1, delay: i * 0.15 }}
-                          className="w-2 bg-emerald-400 rounded-full"
+                          className="w-2 rounded-full"
+                          style={{ backgroundColor: chatbot?.primaryColor || '#10b981' }}
                         />
                       ))}
                     </div>
                   ) : (
                     <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1.5 }}>
-                       <Mic className="w-20 h-20 text-emerald-400" />
+                       <Mic className="w-20 h-20" style={{ color: chatbot?.primaryColor || '#10b981' }} />
                     </motion.div>
                   )}
                 </div>
@@ -257,8 +266,13 @@ export default function VoiceKioskPage() {
               className={`max-w-2xl w-full p-8 rounded-[2.5rem] border backdrop-blur-2xl transition-colors duration-500
                 ${lastTranscript.role === 'user' 
                   ? 'bg-white/5 border-white/10' 
-                  : 'bg-emerald-500/10 border-emerald-500/20 shadow-[0_20px_50px_-15px_rgba(16,185,129,0.2)]'
+                  : 'bg-white/10 border-white/20 shadow-xl'
                 }`}
+              style={lastTranscript.role !== 'user' ? { 
+                borderColor: `${chatbot?.primaryColor || '#10b981'}33`,
+                backgroundColor: `${chatbot?.primaryColor || '#10b981'}1a`,
+                boxShadow: `0 20px 50px -15px ${chatbot?.primaryColor || '#10b981'}33`
+              } : undefined}
             >
               <div className="flex items-start gap-4 mb-4 opacity-50">
                 {lastTranscript.role === 'user' ? <Mic className="w-4 h-4 mt-1" /> : <Bot className="w-4 h-4 mt-1" />}
@@ -288,8 +302,12 @@ export default function VoiceKioskPage() {
               className={`w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-xl active:scale-95 select-none touch-none
                 ${isRecording 
                   ? 'bg-red-500 shadow-red-500/50' 
-                  : 'bg-emerald-500 shadow-emerald-500/50 hover:bg-emerald-400'
+                  : 'shadow-lg hover:brightness-110'
                 }`}
+              style={{ 
+                backgroundColor: isRecording ? undefined : (chatbot?.primaryColor || '#10b981'),
+                boxShadow: isRecording ? undefined : `0 10px 25px -5px ${chatbot?.primaryColor || '#10b981'}66`
+              }}
             >
               {isRecording ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
             </button>
@@ -321,7 +339,8 @@ export default function VoiceKioskPage() {
               {transcripts.map((t, i) => (
                 <div key={i} className={`flex flex-col ${t.role === 'user' ? 'items-end' : 'items-start'}`}>
                   <div className={`px-4 py-3 rounded-2xl text-sm max-w-[85%] 
-                    ${t.role === 'user' ? 'bg-emerald-500 text-black font-bold' : 'bg-white/10 border border-white/10'}`}>
+                    ${t.role === 'user' ? 'text-black font-bold' : 'bg-white/10 border border-white/10'}`}
+                    style={t.role === 'user' ? { backgroundColor: chatbot?.primaryColor || '#10b981' } : undefined}>
                     {t.text}
                   </div>
                   <span className="text-[10px] mt-1.5 opacity-30 font-bold uppercase tracking-widest px-1">
