@@ -50,7 +50,8 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
       provider_storage: chatbot.providerStorage,
       provider_embedding: chatbot.providerEmbedding,
       collection_name: chatbot.collectionName,
-    }
+    },
+    apiUrl: chatbot.apiUrl
   });
 
   const toggleVoice = async () => {
@@ -97,7 +98,13 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
   }, [messages, isTyping]);
 
   const handleSend = async () => {
-    if (!input.trim() || voiceStatus === 'idle') return;
+    if (!input.trim()) return;
+    
+    // Ensure connected before sending
+    if (voiceStatus === 'idle' || voiceStatus === 'error') {
+      await warmup();
+      connectVoice();
+    }
 
     const userMsg = input.trim();
     setInput('');
@@ -207,7 +214,7 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
                   </div>
                 </motion.div>
               ))}
-              {isTyping && (
+              {voiceStatus === 'thinking' && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
                   <div className="w-8 h-8 rounded-full bg-white border border-neutral-200 shadow-sm flex items-center justify-center mr-2.5 mt-auto mb-1 flex-shrink-0 overflow-hidden">
                     {chatbot.logoUrl ? (
@@ -234,8 +241,8 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    placeholder={voiceStatus !== 'idle' ? "Listening via Voice..." : (chatbot.inputPlaceholder || "Ask me anything...")}
-                    disabled={voiceStatus !== 'idle'}
+                    placeholder={voiceStatus === 'listening' ? "I am listening..." : (chatbot.inputPlaceholder || "Ask me anything...")}
+                    disabled={voiceStatus === 'connecting' || voiceStatus === 'listening'}
                     className="w-full px-4 py-3.5 rounded-2xl bg-neutral-100/60 border border-neutral-200/50 outline-none text-[14.5px] font-medium placeholder:text-neutral-400 group-hover:bg-neutral-100 transition-colors focus:bg-white focus:ring-2 focus:border-transparent target-ring-color disabled:opacity-50"
                   />
                   <style dangerouslySetInnerHTML={{__html: `.target-ring-color:focus { --tw-ring-color: ${chatbot.primaryColor}; --tw-ring-opacity: 0.25; }`}} />
@@ -270,11 +277,11 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
 
                 <button 
                   onClick={handleSend}
-                  disabled={!input.trim() || isTyping || voiceStatus !== 'idle'}
+                  disabled={!input.trim() || voiceStatus === 'connecting' || voiceStatus === 'listening'}
                   className="p-3.5 rounded-2xl text-white transition-all disabled:opacity-50 disabled:scale-100 shadow-[0_4px_14px_rgba(0,0,0,0.15)] hover:scale-105 active:scale-95 flex items-center justify-center min-w-[50px] min-h-[50px]"
                   style={{ backgroundColor: chatbot.primaryColor }}
                 >
-                  {isTyping ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 ml-0.5" />}
+                  {voiceStatus === 'thinking' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 ml-0.5" />}
                 </button>
               </div>
               <p className="text-[10px] text-center text-neutral-400 mt-3.5 font-medium tracking-wide">

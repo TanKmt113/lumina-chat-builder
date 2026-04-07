@@ -349,19 +349,20 @@ export default function BuilderPage() {
                         />
                       </div>
                       
-                      <div className="space-y-4 pt-6 border-t border-neutral-100">
-                        <h3 className="font-semibold text-neutral-800">API Configuration</h3>
-                        
-                        <div className="space-y-2">
-                          <label className="text-sm font-semibold text-neutral-700">API Stream URL</label>
-                          <input 
-                            type="text" 
-                            value={chatbot.apiUrl || ''}
-                            onChange={(e) => updateChatbot({ apiUrl: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border border-neutral-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all outline-none text-sm"
-                            placeholder="https://devaibigdata.foxai.com.vn:5720/query/v1/agents/public/chat/public/stream"
-                          />
-                        </div>
+                        <div className="space-y-4 pt-6 border-t border-neutral-100">
+                          <h3 className="font-semibold text-neutral-800">Unified API Configuration</h3>
+                          <p className="text-[11px] text-neutral-400 -mt-2">This WebSocket API handles both real-time voice and text chat.</p>
+                          
+                          <div className="space-y-2">
+                            <label className="text-sm font-semibold text-neutral-700">WebSocket API URL</label>
+                            <input 
+                              type="text" 
+                              value={chatbot.apiUrl || ''}
+                              onChange={(e) => updateChatbot({ apiUrl: e.target.value })}
+                              className="w-full px-4 py-3 rounded-xl border border-neutral-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all outline-none text-sm"
+                              placeholder="wss://devaibigdata.foxai.com.vn:5620/query/v1/agents/voice-kiosk"
+                            />
+                          </div>
 
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">

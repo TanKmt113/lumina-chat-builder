@@ -17,6 +17,7 @@ interface UseVoiceChatOptions {
   onStatusChange?: (status: VoiceChatStatus) => void;
   onError?: (error: string) => void;
   metadata?: VoiceChatMetadata;
+  apiUrl?: string;
 }
 
 export function useVoiceChat(conversationId: string, options: UseVoiceChatOptions = {}) {
@@ -31,6 +32,11 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const playbackQueueRef = useRef<Float32Array[]>([]);
   const isPlayingRef = useRef(false);
+  const nextStartTimeRef = useRef(0);
+  const scheduledSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const pendingChunksRef = useRef<Float32Array[]>([]);
+  const pendingSamplesCountRef = useRef(0);
+  const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const updateStatus = useCallback((newStatus: VoiceChatStatus) => {
     setStatus(newStatus);
@@ -46,7 +52,14 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
     }
 
     updateStatus('connecting');
-    let wsUrl = `wss://devaibigdata.foxai.com.vn:5620/query/v1/agents/voice-kiosk?conversation_id=${encodeURIComponent(conversationId)}`;
+    
+    // Use the API URL from options (WebSocket) or fallback to default
+    let baseUrl = options.apiUrl || 'wss://devaibigdata.foxai.com.vn:5620/query/v1/agents/voice-kiosk';
+    
+    // Ensure the URL has the conversation_id
+    let wsUrl = baseUrl.includes('?') 
+      ? `${baseUrl}&conversation_id=${encodeURIComponent(conversationId)}`
+      : `${baseUrl}?conversation_id=${encodeURIComponent(conversationId)}`;
     
     if (options.metadata) {
       if (options.metadata.provider_llm) wsUrl += `&provider_llm=${encodeURIComponent(options.metadata.provider_llm)}`;
@@ -99,7 +112,13 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
           break;
 
         case 'turn_complete':
-          updateStatus('connected');
+          // Flush any remaining small fragments immediately
+          flushPendingChunks();
+          
+          // Wait for playback to finish before going back to 'connected'
+          if (!isPlayingRef.current) {
+            updateStatus('connected');
+          }
           break;
 
         case 'error':
@@ -126,22 +145,54 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
     };
   }, [conversationId, options, updateStatus]);
 
-  const queuePlayback = (audioData: Float32Array) => {
-    playbackQueueRef.current.push(audioData);
-    if (!isPlayingRef.current) {
-      playNextInQueue();
+  const mergeChunks = (chunks: Float32Array[], totalLength: number) => {
+    const merged = new Float32Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return merged;
+  };
+
+  const flushPendingChunks = useCallback(async () => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+
+    if (pendingChunksRef.current.length > 0) {
+      const merged = mergeChunks(pendingChunksRef.current, pendingSamplesCountRef.current);
+      playbackQueueRef.current.push(merged);
+      pendingChunksRef.current = [];
+      pendingSamplesCountRef.current = 0;
+      
+      await processQueuePlayback();
+    }
+  }, [status]);
+
+  const queuePlayback = async (audioData: Float32Array) => {
+    pendingChunksRef.current.push(audioData);
+    pendingSamplesCountRef.current += audioData.length;
+    
+    // Threshold: 2400 samples = 100ms at 24kHz
+    if (pendingSamplesCountRef.current >= 2400) {
+      flushPendingChunks();
+    } else {
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = setTimeout(() => {
+        flushPendingChunks();
+      }, 150);
+    }
+
+    // Process queue proactively whenever new data arrives
+    if (playbackQueueRef.current.length >= 1) {
+      await processQueuePlayback();
     }
   };
 
-  const playNextInQueue = async () => {
-    if (playbackQueueRef.current.length === 0) {
-      isPlayingRef.current = false;
-      updateStatus('connected');
-      return;
-    }
-
-    isPlayingRef.current = true;
-    updateStatus('speaking');
+  const processQueuePlayback = async () => {
+    if (playbackQueueRef.current.length === 0) return;
 
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -152,22 +203,53 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
       await ctx.resume();
     }
 
-    const chunk = playbackQueueRef.current.shift()!;
-    const buffer = ctx.createBuffer(1, chunk.length, 24000);
-    buffer.getChannelData(0).set(chunk);
+    isPlayingRef.current = true;
+    updateStatus('speaking');
 
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.onended = () => {
-      playNextInQueue();
-    };
-    source.start();
+    // Schedule ALL available chunks in the queue
+    while (playbackQueueRef.current.length > 0) {
+      const chunk = playbackQueueRef.current.shift()!;
+      const buffer = ctx.createBuffer(1, chunk.length, 24000);
+      buffer.getChannelData(0).set(chunk);
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+      // If the scheduled end of previous chunk is in the past, reset the anchor to now + small delay
+      const anchorResetDelay = 0.05; // 50ms buffer
+      let startTime = Math.max(now + anchorResetDelay, nextStartTimeRef.current);
+      
+      source.start(startTime);
+      nextStartTimeRef.current = startTime + buffer.duration;
+      scheduledSourcesRef.current.push(source);
+
+      source.onended = () => {
+        scheduledSourcesRef.current = scheduledSourcesRef.current.filter(s => s !== source);
+        if (scheduledSourcesRef.current.length === 0 && playbackQueueRef.current.length === 0) {
+          isPlayingRef.current = false;
+          // Only return to 'connected' if we're not waiting for more data
+          if (status === 'speaking') {
+            updateStatus('connected');
+          }
+        }
+      };
+    }
   };
 
   const startRecording = async () => {
     console.log('Voice session: startRecording triggered');
     try {
+      // Interruption logic: Clear playback queue and stop active audio
+      playbackQueueRef.current = [];
+      isPlayingRef.current = false;
+      scheduledSourcesRef.current.forEach(source => {
+        try { source.stop(); } catch(e) {}
+      });
+      scheduledSourcesRef.current = [];
+      nextStartTimeRef.current = 0;
+
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       }
@@ -247,6 +329,16 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
 
   const disconnect = useCallback(() => {
     stopRecording();
+    
+    // Clear playback
+    playbackQueueRef.current = [];
+    isPlayingRef.current = false;
+    scheduledSourcesRef.current.forEach(source => {
+      try { source.stop(); } catch(e) {}
+    });
+    scheduledSourcesRef.current = [];
+    nextStartTimeRef.current = 0;
+
     wsRef.current?.close();
     wsRef.current = null;
     updateStatus('idle');
