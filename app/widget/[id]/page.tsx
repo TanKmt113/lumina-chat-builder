@@ -35,9 +35,22 @@ export default function WidgetPage() {
     startRecording,
     stopRecording,
     warmup,
+    sendText,
   } = useVoiceChat(conversationId, {
     onTranscript: (role, text) => {
-      setMessages(prev => [...prev, { role: role === 'input' ? 'user' : 'bot', text }]);
+      const roleMapped = role === 'input' ? 'user' : 'bot';
+      setMessages(prev => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.role === roleMapped) {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1] = {
+            ...lastMsg,
+            text: lastMsg.text + (lastMsg.text.endsWith(' ') || text.startsWith(' ') ? '' : ' ') + text
+          };
+          return newMessages;
+        }
+        return [...prev, { role: roleMapped, text }];
+      });
     },
     metadata: chatbot ? {
       provider_llm: chatbot.providerLlm,
@@ -48,9 +61,13 @@ export default function WidgetPage() {
   });
 
   const toggleVoice = async () => {
-    if (voiceStatus === 'idle') {
+    if (voiceStatus === 'idle' || voiceStatus === 'error') {
       await warmup();
       connectVoice();
+    } else if (voiceStatus === 'connected') {
+      startRecording();
+    } else if (voiceStatus === 'listening') {
+      stopRecording();
     } else {
       disconnectVoice();
     }
@@ -102,6 +119,12 @@ export default function WidgetPage() {
     const userMsg = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+
+    if (voiceStatus !== 'idle') {
+      sendText(userMsg);
+      return;
+    }
+
     setIsTyping(true);
 
     try {

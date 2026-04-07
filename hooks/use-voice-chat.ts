@@ -202,7 +202,9 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
         }
 
         const pcm16 = float32ToPcm16(resampledData);
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
+        if (pcm16.length > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+          // Log occasionally to confirm sending data
+          if (Math.random() < 0.01) console.log('Sending audio data chunk...');
           wsRef.current.send(JSON.stringify({
             type: 'audio',
             data: arrayBufferToBase64(pcm16.buffer as ArrayBuffer)
@@ -267,6 +269,12 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
     };
   }, []);
 
+  const sendText = (text: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'text', data: text }));
+    }
+  };
+
   return {
     status,
     transcripts,
@@ -276,5 +284,6 @@ export function useVoiceChat(conversationId: string, options: UseVoiceChatOption
     startRecording,
     stopRecording,
     warmup,
+    sendText,
   };
 }

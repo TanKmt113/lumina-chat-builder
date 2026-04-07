@@ -28,12 +28,21 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
     startRecording,
     stopRecording,
     warmup,
+    sendText,
   } = useVoiceChat(conversationId, {
     onTranscript: (role, text) => {
+      const roleMapped = role === 'input' ? 'user' : 'bot';
       setMessages(prev => {
-        // If the last message is from the same role, we might want to update it for streaming feel, 
-        // but for now, we'll just append to keep it simple and reliable.
-        return [...prev, { role: role === 'input' ? 'user' : 'bot', text }];
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.role === roleMapped) {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1] = {
+            ...lastMsg,
+            text: lastMsg.text + (lastMsg.text.endsWith(' ') || text.startsWith(' ') ? '' : ' ') + text
+          };
+          return newMessages;
+        }
+        return [...prev, { role: roleMapped, text }];
       });
     },
     metadata: {
@@ -45,10 +54,15 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
   });
 
   const toggleVoice = async () => {
-    if (voiceStatus === 'idle') {
+    if (voiceStatus === 'idle' || voiceStatus === 'error') {
       await warmup();
       connectVoice();
+    } else if (voiceStatus === 'connected') {
+      startRecording();
+    } else if (voiceStatus === 'listening') {
+      stopRecording();
     } else {
+      // speaking, thinking, etc.
       disconnectVoice();
     }
   };
@@ -83,6 +97,12 @@ export default function ChatPreview({ chatbot }: { chatbot: any }) {
     const userMsg = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+
+    if (voiceStatus !== 'idle') {
+      sendText(userMsg);
+      return;
+    }
+
     setIsTyping(true);
 
     try {
