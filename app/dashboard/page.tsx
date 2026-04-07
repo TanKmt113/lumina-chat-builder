@@ -5,7 +5,7 @@ import { auth, db } from '@/lib/firebase';
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { Plus, Bot, Settings, Trash2, ExternalLink, LogOut, Loader2 } from 'lucide-react';
+import { Plus, Bot, Settings, Trash2, ExternalLink, LogOut, Loader2, Volume2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Chatbot {
@@ -50,7 +50,6 @@ export default function Dashboard() {
   const createChatbot = async () => {
     if (!user) return;
     setIsCreating(true);
-    alert(1);
     console.log('Chatbot created with ID:');
     
     try {
@@ -69,9 +68,7 @@ export default function Dashboard() {
       
       // router.push(`/builder/${docRef.id}`);
     } catch (error: any) {
-      alert(2)
       console.error('Failed to create chatbot:', error);
-      alert('Creation failed: ' + (error?.message || 'Unknown error'));
     } finally {
       setIsCreating(false);
     }
@@ -187,10 +184,17 @@ export default function Dashboard() {
                   <h3 className="text-xl font-bold mb-1 group-hover:text-emerald-600 transition-colors">{bot.name}</h3>
                   <p className="text-sm text-neutral-500 mb-6">Bot Name: {bot.botName}</p>
                   
-                  <div className="flex items-center justify-between pt-4 border-t border-neutral-50">
-                    <span className="text-xs text-neutral-400">
-                      {bot.createdAt?.toDate().toLocaleDateString()}
-                    </span>
+                  <div className="flex items-center gap-3 mt-4 pt-4 border-t border-neutral-50">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(`/voice-kiosk/${bot.id}`, '_blank');
+                      }}
+                      className="flex-1 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Volume2 className="w-3.5 h-3.5" />
+                      Voice Kiosk
+                    </button>
                     <div className="flex items-center gap-2 text-sm font-medium text-neutral-600">
                       Edit <Settings className="w-4 h-4" />
                     </div>
