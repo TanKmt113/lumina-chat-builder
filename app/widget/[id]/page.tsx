@@ -74,6 +74,12 @@ export default function WidgetPage() {
   };
 
   useEffect(() => {
+    if ((voiceStatus === 'idle' || voiceStatus === 'error') && conversationId) {
+      connectVoice();
+    }
+  }, [voiceStatus, conversationId, connectVoice]);
+
+  useEffect(() => {
     if (!conversationId) {
       setConversationId(crypto.randomUUID());
     }
@@ -114,121 +120,13 @@ export default function WidgetPage() {
   }, [messages, isTyping]);
 
   const handleSend = async () => {
-    if (!input.trim() || isTyping) return;
+    if (!input.trim() || voiceStatus === 'idle') return;
 
     const userMsg = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
 
-    if (voiceStatus !== 'idle') {
-      sendText(userMsg);
-      return;
-    }
-
-    setIsTyping(true);
-
-    try {
-      const apiUrl = chatbot.apiUrl || 'https://devaibigdata.foxai.com.vn:5720/query/v1/agents/public/chat/public/stream';
-      
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': '*/*'
-        },
-        body: JSON.stringify({
-          message: userMsg,
-          client_id: clientIdRef.current,
-          conversation_id: conversationId,
-          provider_llm: chatbot.providerLlm || "gemini",
-          provider_storage: chatbot.providerStorage || "qdrant",
-          provider_embedding: chatbot.providerEmbedding || "gemini",
-          collection_name: chatbot.collectionName || "LVB_Customer_Support"
-        })
-      });
-
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      if (!response.body) throw new Error('No response body');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let botText = '';
-      let buffer = '';
-      let isFirstChunk = true;
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; 
-        
-        let newChunkText = '';
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          
-          // Ignore SSE comments (like ": keepalive"), events, etc.
-          if (trimmedLine.startsWith(':') || trimmedLine.startsWith('event:') || trimmedLine.startsWith('id:') || trimmedLine.startsWith('retry:')) {
-            continue;
-          }
-
-          if (trimmedLine.startsWith('data:')) {
-            const dataStr = trimmedLine.slice(5).trim();
-            if (dataStr === '[DONE]' || dataStr.toLowerCase() === 'keepalive') continue;
-            try {
-              const data = JSON.parse(dataStr);
-              const textChunk = data.content || data.text || data.message || data.data || '';
-              const valueToAdd = typeof textChunk === 'string' ? textChunk : JSON.stringify(textChunk);
-              if (valueToAdd && valueToAdd.trim().toLowerCase() !== 'keepalive') {
-                newChunkText += valueToAdd;
-              }
-            } catch {
-              newChunkText += dataStr;
-            }
-          } else if (trimmedLine !== '') {
-            if (trimmedLine.toLowerCase() !== 'keepalive') {
-              newChunkText += trimmedLine;
-            }
-          }
-        }
-
-        if (newChunkText) {
-          botText += newChunkText;
-          if (isFirstChunk) {
-            setIsTyping(false);
-            setMessages(prev => [...prev, { role: 'bot', text: botText }]);
-            isFirstChunk = false;
-          } else {
-            setMessages(prev => {
-              const newMessages = [...prev];
-              if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'bot') {
-                newMessages[newMessages.length - 1].text = botText;
-              }
-              return newMessages;
-            });
-          }
-        }
-      }
-      
-      if (isFirstChunk) {
-        setIsTyping(false);
-        setMessages(prev => [...prev, { role: 'bot', text: '' }]);
-      }
-    } catch (error) {
-      console.error('AI Error:', error);
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg && lastMsg.role === 'bot' && lastMsg.text === '') {
-          const newMessages = [...prev];
-          newMessages[newMessages.length - 1].text = "Sorry, I'm having trouble connecting right now.";
-          return newMessages;
-        }
-        return [...prev, { role: 'bot', text: "Sorry, I'm having trouble connecting right now." }];
-      });
-    } finally {
-      setIsTyping(false);
-    }
+    sendText(userMsg);
   };
 
   if (loading) return null;
